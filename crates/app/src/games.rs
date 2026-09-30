@@ -223,15 +223,55 @@ pub fn install(hwnd: HWND, game: &Game, default: &[Rule; SLOTS]) -> Result<bool,
 
 fn install_files(game: &Game, plan: &Plan, default: &[Rule; SLOTS]) -> Result<(), String> {
     write_proxy_config(game, default)?;
-    if plan.status == Status::Foreign {
-        std::fs::rename(&plan.dll, &plan.backup).map_err(|e| io_message(&e, "rename", &plan.dll))?;
+    let old = old_path(&plan.dll);
+    let _ = std::fs::remove_file(&old);
+    match plan.status {
+        // Same bytes already in place (maybe loaded by the running game): nothing to replace.
+        Status::Installed => return Ok(()),
+        Status::Foreign => std::fs::rename(&plan.dll, &plan.backup).map_err(|e| io_message(&e, "rename", &plan.dll))?,
+        // A running game may have the old proxy loaded: it can be renamed, not overwritten.
+        Status::Outdated => std::fs::rename(&plan.dll, &old).map_err(|e| io_message(&e, "rename", &plan.dll))?,
+        Status::NotInstalled | Status::ExeMissing => {}
     }
     write_atomic(&plan.dll, dll_bytes(plan.arch, plan.dll_name)).map_err(|e| {
-        if plan.status == Status::Foreign {
-            let _ = std::fs::rename(&plan.backup, &plan.dll);
+        match plan.status {
+            Status::Foreign => drop(std::fs::rename(&plan.backup, &plan.dll)),
+            Status::Outdated => drop(std::fs::rename(&old, &plan.dll)),
+            _ => {}
         }
         io_message(&e, "write", &plan.dll)
-    })
+    })?;
+    // Fails while the game still has the old proxy loaded; retried on the next install or removal.
+    let _ = std::fs::remove_file(&old);
+    Ok(())
+}
+
+/// Where a proxy that is still loaded by a running game is moved aside.
+fn old_path(dll: &Path) -> PathBuf {
+    let mut p = dll.as_os_str().to_owned();
+    p.push(".cps-old");
+    PathBuf::from(p)
+}
+
+/// Deletes a proxy moved aside while the game had it loaded, once the game released it
+/// (called when the menu opens; silently does nothing while it is still in use).
+pub fn delete_old_proxy(game: &Game) {
+    if let Ok((_, dll)) = target(game) {
+        let _ = std::fs::remove_file(old_path(&game_dir(game).join(dll)));
+    }
+}
+
+/// Deletes our proxy DLL. If the running game has it loaded, it is renamed aside
+/// instead (Windows allows renaming a loaded DLL, not deleting it) and deleted later.
+fn retire(dll: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(dll) {
+        Err(e) if e.kind() != ErrorKind::NotFound => {
+            let old = old_path(dll);
+            let _ = std::fs::remove_file(&old);
+            std::fs::rename(dll, &old)
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Removes the proxy, its config and log, and restores a backed-up DLL.
@@ -245,13 +285,15 @@ pub fn remove_proxy(game: &Game) -> Result<(), String> {
         _ => Ok(()),
     };
     match status(game) {
-        Status::Installed | Status::Outdated => remove(&dll)?,
+        Status::Installed | Status::Outdated => retire(&dll).map_err(|e| io_message(&e, "delete", &dll))?,
         Status::Foreign => return Err(format!("{} is not this proxy; it was left in place.", dll.display())),
         Status::NotInstalled | Status::ExeMissing => {}
     }
     if backup.exists() && !dll.exists() {
         std::fs::rename(&backup, &dll).map_err(|e| io_message(&e, "restore", &dll))?;
     }
+    // Still loaded by a running game: left for the next removal or install.
+    let _ = std::fs::remove_file(old_path(&dll));
     remove(&dir.join(PROXY_CONFIG_FILE))?;
     remove(&dir.join(PROXY_LOG_FILE))
 }
@@ -286,7 +328,8 @@ pub fn add(hwnd: HWND) -> Result<(), String> {
 pub fn add_running(hwnd: HWND, exe: &Path, dll: &'static str) -> Result<(), String> {
     let (cfg, g) = add_exe(hwnd, exe, Some(dll))?;
     let game = &cfg.games[g];
-    if install(hwnd, game, &cfg.default_players)? {
+    let already = status(game).is_ours();
+    if install(hwnd, game, &cfg.default_players)? && !already {
         win::info(
             hwnd,
             &format!("Proxy installed. Restart {} so that it loads the proxy.", game.name),
@@ -461,6 +504,39 @@ mod tests {
         };
         assert_eq!(remove_all(&cfg), Ok(1));
         assert_eq!(status(&game), Status::NotInstalled);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn works_while_the_game_has_the_proxy_loaded() {
+        use windows_sys::Win32::Foundation::FreeLibrary;
+        use windows_sys::Win32::System::LibraryLoader::LoadLibraryW;
+        let (dir, mut game) = test_game("loaded");
+        game.arch = "x64".into();
+        let dll = dir.join("xinput1_3.dll");
+        // An older build of the proxy: same DLL with one extra byte (still loadable).
+        let mut old = dll_bytes(Arch::X64, "xinput1_3.dll").to_vec();
+        old.push(0);
+        std::fs::write(&dll, &old).unwrap();
+        assert_eq!(status(&game), Status::Outdated);
+        // The "game" (this test process) loads it, as a running game would.
+        let m = unsafe { LoadLibraryW(win::wide(&dll).as_ptr()) };
+        assert!(!m.is_null());
+
+        // Reinstalling the same version and updating both work while it is loaded.
+        install_files(&game, &plan_install(&game).unwrap(), &[Rule::Auto; SLOTS]).unwrap();
+        assert_eq!(status(&game), Status::Installed);
+        install_files(&game, &plan_install(&game).unwrap(), &[Rule::Auto; SLOTS]).unwrap();
+        assert_eq!(status(&game), Status::Installed);
+        assert!(old_path(&dll).exists(), "the loaded old proxy is moved aside");
+
+        // Removal works too, and the moved-aside file goes once the game unloads it.
+        remove_proxy(&game).unwrap();
+        assert!(!dll.exists());
+        unsafe { FreeLibrary(m) };
+        install_files(&game, &plan_install(&game).unwrap(), &[Rule::Auto; SLOTS]).unwrap();
+        remove_proxy(&game).unwrap();
+        assert!(!old_path(&dll).exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

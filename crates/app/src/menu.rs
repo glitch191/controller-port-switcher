@@ -88,12 +88,10 @@ fn running_games(cfg: &AppConfig) -> Vec<RunningGame> {
             continue;
         };
         let dll = Path::new(&game.exe).with_file_name(&game.dll);
-        let proxy = match procs::modules(p.pid) {
+        let proxy = match procs::proxy_loaded(p.pid, &dll) {
             None => ProxyState::Unknown,
-            Some(mods) if mods.iter().any(|m| procs::same_path(m, &dll)) && games::status(game).is_ours() => {
-                ProxyState::Loaded
-            }
-            Some(_) => ProxyState::NotLoaded,
+            Some(true) => ProxyState::Loaded,
+            Some(false) => ProxyState::NotLoaded,
         };
         out.push(RunningGame { index, proxy });
     }
@@ -245,6 +243,7 @@ fn games_menu(cfg: &AppConfig) -> HMENU {
     }
     let mut any_proxy = false;
     for (g, game) in cfg.games.iter().enumerate().take(MAX_GAMES) {
+        games::delete_old_proxy(game);
         let status = games::status(game);
         any_proxy |= status.is_ours();
         let sub = unsafe { CreatePopupMenu() };
