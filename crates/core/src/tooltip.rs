@@ -219,11 +219,7 @@ mod tests {
         ];
         assert_eq!(
             status_text("controller-port-switcher", &slots, &names),
-            "controller-port-switcher
-Port 1 Xbox Controller
-Port 2 Real Arcade Pro.4
-Port 3 Empty
-Port 4 Empty"
+            "controller-port-switcher\nPort 1 Xbox Controller\nPort 2 Real Arcade Pro.4\nPort 3 Empty\nPort 4 Empty"
         );
         assert_eq!(menu_label(&slots[1], &names[1]), "Real Arcade Pro.4 (0F0D:008C)");
         assert_eq!(menu_label(&slots[1], &SlotInfo::default()), "Gamepad 0F0D:008C");
