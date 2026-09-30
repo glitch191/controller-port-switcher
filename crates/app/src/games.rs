@@ -200,12 +200,7 @@ pub fn install(hwnd: HWND, game: &Game, default: &[Rule; SLOTS]) -> Result<bool,
     let plan = plan_install(game)?;
     if !plan.status.is_ours() {
         let mut text = format!(
-            "Install the proxy for {}?
-
-This writes {} ({}-bit) and {PROXY_CONFIG_FILE} to:
-{}
-
-",
+            "Install the proxy for {}?\n\nThis writes {} ({}-bit) and {PROXY_CONFIG_FILE} to:\n{}\n\n",
             game.name,
             plan.dll_name,
             plan.arch.bits(),
@@ -213,9 +208,8 @@ This writes {} ({}-bit) and {PROXY_CONFIG_FILE} to:
         );
         if plan.status == Status::Foreign {
             text += &format!(
-                "A different {0} is already in this folder. It will be renamed to {0}{BACKUP_SUFFIX}                  and restored when you remove the proxy.
-
-",
+                "A different {0} is already in this folder. It will be renamed to {0}{BACKUP_SUFFIX} \
+                 and restored when you remove the proxy.\n\n",
                 plan.dll_name
             );
         }
@@ -276,15 +270,7 @@ pub fn remove_all(cfg: &AppConfig) -> Result<usize, String> {
     if errors.is_empty() {
         Ok(removed)
     } else {
-        Err(format!(
-            "Some proxies were not removed:
-
-{}",
-            errors.join(
-                "
-"
-            )
-        ))
+        Err(format!("Some proxies were not removed:\n\n{}", errors.join("\n")))
     }
 }
 
@@ -339,7 +325,9 @@ fn add_exe(hwnd: HWND, exe: &Path, dll: Option<&'static str>) -> Result<(AppConf
     };
     let note = unsure.then(|| {
         format!(
-            "{} does not show clearly which XInput DLL it uses, so {} was chosen. If the order has no effect in              the game, use Add running game while the game is open, or change \"dll\" for this game in {}              (Open config folder) to one of {}.",
+            "{} does not show clearly which XInput DLL it uses, so {} was chosen. If the order has no effect in \
+             the game, use Add running game while the game is open, or change \"dll\" for this game in {} \
+             (Open config folder) to one of {}.",
             game.name,
             game.dll,
             APP_CONFIG_FILE,
