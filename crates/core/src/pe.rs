@@ -53,7 +53,10 @@ impl std::fmt::Display for PeError {
         match self {
             PeError::NotPe => f.write_str("the file is not a valid Windows executable"),
             PeError::UnsupportedMachine(m) => {
-                write!(f, "unsupported CPU architecture (machine 0x{m:04X}); only x86 and x64 games are supported")
+                write!(
+                    f,
+                    "unsupported CPU architecture (machine 0x{m:04X}); only x86 and x64 games are supported"
+                )
             }
         }
     }
@@ -104,7 +107,15 @@ impl<'a> Image<'a> {
             (m, _) => return Err(PeError::UnsupportedMachine(m)),
         };
         let dir_count = u32_at(b, opt + count_off).ok_or(PeError::NotPe)? as usize;
-        Ok(Image { b, arch, image_base, dirs: opt + dirs, dir_count, sections: opt + opt_size, section_count })
+        Ok(Image {
+            b,
+            arch,
+            image_base,
+            dirs: opt + dirs,
+            dir_count,
+            sections: opt + opt_size,
+            section_count,
+        })
     }
 
     fn dir(&self, index: usize) -> Option<(u32, u32)> {
@@ -140,7 +151,9 @@ impl<'a> Image<'a> {
 
     fn imports(&self) -> Vec<String> {
         let mut out = Vec::new();
-        let Some(mut o) = self.dir(1).and_then(|(rva, _)| self.offset(rva)) else { return out };
+        let Some(mut o) = self.dir(1).and_then(|(rva, _)| self.offset(rva)) else {
+            return out;
+        };
         while let Some(name_rva) = u32_at(self.b, o + 12) {
             if name_rva == 0 || out.len() > 1024 {
                 break;
@@ -153,13 +166,19 @@ impl<'a> Image<'a> {
 
     fn delay_imports(&self) -> Vec<String> {
         let mut out = Vec::new();
-        let Some(mut o) = self.dir(13).and_then(|(rva, _)| self.offset(rva)) else { return out };
+        let Some(mut o) = self.dir(13).and_then(|(rva, _)| self.offset(rva)) else {
+            return out;
+        };
         while let (Some(attrs), Some(name)) = (u32_at(self.b, o), u32_at(self.b, o + 4)) {
             if name == 0 || out.len() > 1024 {
                 break;
             }
             // Old-style descriptors (attributes 0) store virtual addresses, not RVAs.
-            let rva = if attrs & 1 == 0 { (name as u64).wrapping_sub(self.image_base) as u32 } else { name };
+            let rva = if attrs & 1 == 0 {
+                (name as u64).wrapping_sub(self.image_base) as u32
+            } else {
+                name
+            };
             out.extend(self.cstr(rva));
             o += 32;
         }
@@ -168,8 +187,12 @@ impl<'a> Image<'a> {
 
     fn exports(&self) -> Vec<String> {
         let mut out = Vec::new();
-        let Some(o) = self.dir(0).and_then(|(rva, _)| self.offset(rva)) else { return out };
-        let (Some(count), Some(names)) = (u32_at(self.b, o + 24), u32_at(self.b, o + 32)) else { return out };
+        let Some(o) = self.dir(0).and_then(|(rva, _)| self.offset(rva)) else {
+            return out;
+        };
+        let (Some(count), Some(names)) = (u32_at(self.b, o + 24), u32_at(self.b, o + 32)) else {
+            return out;
+        };
         let Some(names) = self.offset(names) else { return out };
         for i in 0..count.min(4096) as usize {
             if let Some(name) = u32_at(self.b, names + i * 4).and_then(|rva| self.cstr(rva)) {
@@ -182,7 +205,11 @@ impl<'a> Image<'a> {
 
 pub fn parse(b: &[u8]) -> Result<PeInfo, PeError> {
     let img = Image::open(b)?;
-    Ok(PeInfo { arch: img.arch, imports: img.imports(), delay_imports: img.delay_imports() })
+    Ok(PeInfo {
+        arch: img.arch,
+        imports: img.imports(),
+        delay_imports: img.delay_imports(),
+    })
 }
 
 /// Lowercase exported names (used by tests to compare with the system XInput).
@@ -214,7 +241,11 @@ pub struct Detection {
 pub fn detect(b: &[u8]) -> Result<Detection, PeError> {
     let info = parse(b)?;
     let pick = |names: &[String]| -> Vec<&'static str> {
-        XINPUT_DLLS.iter().copied().filter(|d| names.iter().any(|n| n == d)).collect()
+        XINPUT_DLLS
+            .iter()
+            .copied()
+            .filter(|d| names.iter().any(|n| n == d))
+            .collect()
     };
     let candidates = [
         (DllSource::ImportTable, pick(&info.imports)),
@@ -223,10 +254,20 @@ pub fn detect(b: &[u8]) -> Result<Detection, PeError> {
     ];
     for (source, found) in candidates {
         if let Some((&dll, rest)) = found.split_first() {
-            return Ok(Detection { arch: info.arch, dll, source, others: rest.to_vec() });
+            return Ok(Detection {
+                arch: info.arch,
+                dll,
+                source,
+                others: rest.to_vec(),
+            });
         }
     }
-    Ok(Detection { arch: info.arch, dll: "xinput1_3.dll", source: DllSource::Default, others: Vec::new() })
+    Ok(Detection {
+        arch: info.arch,
+        dll: "xinput1_3.dll",
+        source: DllSource::Default,
+        others: Vec::new(),
+    })
 }
 
 /// XInput DLL names present anywhere in the file as ASCII or UTF-16LE (case-insensitive),
@@ -316,14 +357,20 @@ mod tests {
     fn detects_imported_xinput_x64() {
         let b = fake_pe(0x8664, &["KERNEL32.dll", "XINPUT1_3.dll"], &[]);
         let d = detect(&b).unwrap();
-        assert_eq!((d.arch, d.dll, d.source), (Arch::X64, "xinput1_3.dll", DllSource::ImportTable));
+        assert_eq!(
+            (d.arch, d.dll, d.source),
+            (Arch::X64, "xinput1_3.dll", DllSource::ImportTable)
+        );
     }
 
     #[test]
     fn detects_delay_import_x86() {
         let b = fake_pe(0x014C, &["kernel32.dll"], &["xinput9_1_0.dll"]);
         let d = detect(&b).unwrap();
-        assert_eq!((d.arch, d.dll, d.source), (Arch::X86, "xinput9_1_0.dll", DllSource::DelayImport));
+        assert_eq!(
+            (d.arch, d.dll, d.source),
+            (Arch::X86, "xinput9_1_0.dll", DllSource::DelayImport)
+        );
     }
 
     #[test]
@@ -335,7 +382,10 @@ mod tests {
         b.extend_from_slice(&wide);
         b.extend_from_slice(b"xinput1_3.dll");
         let d = detect(&b).unwrap();
-        assert_eq!((d.dll, d.source, d.others), ("xinput1_4.dll", DllSource::StringScan, vec!["xinput1_3.dll"]));
+        assert_eq!(
+            (d.dll, d.source, d.others),
+            ("xinput1_4.dll", DllSource::StringScan, vec!["xinput1_3.dll"])
+        );
     }
 
     #[test]
@@ -347,7 +397,9 @@ mod tests {
 
     #[test]
     fn reads_real_system_dll() {
-        let Ok(b) = std::fs::read(r"C:\Windows\System32\xinput1_4.dll") else { return };
+        let Ok(b) = std::fs::read(r"C:\Windows\System32\xinput1_4.dll") else {
+            return;
+        };
         let ex = exports(&b).unwrap();
         assert!(ex.contains(&"xinputgetstate".to_string()));
         assert_eq!(parse(&b).unwrap().arch, Arch::X64);

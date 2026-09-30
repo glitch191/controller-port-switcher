@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE, HWND, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_SHARE_WRITE, OPEN_EXISTING, WriteFile};
-use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole, GetStdHandle, STD_OUTPUT_HANDLE, WriteConsoleW};
+use windows_sys::Win32::System::Console::{
+    ATTACH_PARENT_PROCESS, AttachConsole, GetStdHandle, STD_OUTPUT_HANDLE, WriteConsoleW,
+};
 use windows_sys::Win32::UI::Controls::Dialogs::{
     GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_NOCHANGEDIR, OFN_PATHMUSTEXIST, OPENFILENAMEW,
 };
@@ -23,7 +25,14 @@ pub fn wide(s: impl AsRef<OsStr>) -> Vec<u16> {
 }
 
 fn message(hwnd: HWND, text: &str, style: MESSAGEBOX_STYLE) -> i32 {
-    unsafe { MessageBoxW(hwnd, wide(text).as_ptr(), wide(PROJECT).as_ptr(), style | MB_SETFOREGROUND) }
+    unsafe {
+        MessageBoxW(
+            hwnd,
+            wide(text).as_ptr(),
+            wide(PROJECT).as_ptr(),
+            style | MB_SETFOREGROUND,
+        )
+    }
 }
 
 pub fn error(hwnd: HWND, text: &str) {
@@ -69,7 +78,16 @@ pub fn pick_exe(hwnd: HWND) -> Option<PathBuf> {
 }
 
 pub fn open_folder(path: &Path) {
-    unsafe { ShellExecuteW(null_mut(), wide("open").as_ptr(), wide(path).as_ptr(), null(), null(), SW_SHOWNORMAL) };
+    unsafe {
+        ShellExecuteW(
+            null_mut(),
+            wide("open").as_ptr(),
+            wide(path).as_ptr(),
+            null(),
+            null(),
+            SW_SHOWNORMAL,
+        )
+    };
 }
 
 /// Writes to the console of the process that started us (the app is a GUI program,

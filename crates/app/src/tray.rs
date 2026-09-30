@@ -91,7 +91,14 @@ pub fn load_icon(previous: HICON) -> HICON {
     let id: usize = if light_taskbar() { 1 } else { 2 };
     let size = unsafe { GetSystemMetricsForDpi(SM_CXSMICON, GetDpiForSystem()) };
     let icon = unsafe {
-        LoadImageW(GetModuleHandleW(std::ptr::null()), id as *const u16, IMAGE_ICON, size, size, LR_DEFAULTCOLOR)
+        LoadImageW(
+            GetModuleHandleW(std::ptr::null()),
+            id as *const u16,
+            IMAGE_ICON,
+            size,
+            size,
+            LR_DEFAULTCOLOR,
+        )
     };
     if !previous.is_null() {
         unsafe { DestroyIcon(previous) };

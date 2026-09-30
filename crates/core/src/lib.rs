@@ -6,6 +6,8 @@
 
 #[cfg(feature = "std")]
 pub mod devname;
+#[cfg(feature = "std")]
+pub mod hotkey;
 pub mod mapping;
 #[cfg(feature = "std")]
 pub mod pe;

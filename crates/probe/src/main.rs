@@ -78,7 +78,8 @@ fn load(name: &str) -> Result<XInput, String> {
         let mut buf = [0u16; 1024];
         let n = GetModuleFileNameW(m, buf.as_mut_ptr(), buf.len() as u32) as usize;
         let sym = |s: &[u8]| GetProcAddress(m, s.as_ptr()).map(|f| f as *const c_void);
-        let need = |s: &[u8]| sym(s).ok_or_else(|| format!("{name} has no {}", String::from_utf8_lossy(&s[..s.len() - 1])));
+        let need =
+            |s: &[u8]| sym(s).ok_or_else(|| format!("{name} has no {}", String::from_utf8_lossy(&s[..s.len() - 1])));
         Ok(XInput {
             path: String::from_utf16_lossy(&buf[..n]),
             get_state: std::mem::transmute::<*const c_void, GetState>(need(b"XInputGetState\0")?),
@@ -95,20 +96,35 @@ fn report(x: &XInput) -> String {
         let mut st = State::default();
         let r = unsafe { (x.get_state)(i, &mut st) };
         if r != 0 {
-            let what = if r == 1167 { "not connected".to_string() } else { format!("error {r}") };
+            let what = if r == 1167 {
+                "not connected".to_string()
+            } else {
+                format!("error {r}")
+            };
             out += &format!("{i:<6} {what:<14}\n");
             continue;
         }
         let mut c = Capabilities::default();
-        let sub = if unsafe { (x.get_caps)(i, 0, &mut c) } == 0 { subtype_name(c.subtype) } else { "n/a" };
+        let sub = if unsafe { (x.get_caps)(i, 0, &mut c) } == 0 {
+            subtype_name(c.subtype)
+        } else {
+            "n/a"
+        };
         let dev = match x.get_caps_ex {
             Some(f) => {
                 let mut e = CapabilitiesEx::default();
-                if unsafe { f(1, i, 0, &mut e) } == 0 { format!("{:04X}:{:04X}", e.vid, e.pid) } else { "n/a".into() }
+                if unsafe { f(1, i, 0, &mut e) } == 0 {
+                    format!("{:04X}:{:04X}", e.vid, e.pid)
+                } else {
+                    "n/a".into()
+                }
             }
             None => "n/a".into(),
         };
-        out += &format!("{i:<6} {:<14} {sub:<18} {dev:<10} 0x{:04X}\n", "connected", st.gamepad.buttons);
+        out += &format!(
+            "{i:<6} {:<14} {sub:<18} {dev:<10} 0x{:04X}\n",
+            "connected", st.gamepad.buttons
+        );
     }
     out
 }
@@ -121,8 +137,20 @@ fn main() {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--dll" => dll = args.next().unwrap_or_else(|| exit_usage()),
-            "--watch" => watch = Some(args.next_if(|s| !s.starts_with("--")).map(|s| s.parse().unwrap_or_else(|_| exit_usage()))),
-            "--rumble" => rumble = Some(args.next().and_then(|s| s.parse().ok()).filter(|&i| i < 4).unwrap_or_else(|| exit_usage())),
+            "--watch" => {
+                watch = Some(
+                    args.next_if(|s| !s.starts_with("--"))
+                        .map(|s| s.parse().unwrap_or_else(|_| exit_usage())),
+                )
+            }
+            "--rumble" => {
+                rumble = Some(
+                    args.next()
+                        .and_then(|s| s.parse().ok())
+                        .filter(|&i| i < 4)
+                        .unwrap_or_else(|| exit_usage()),
+                )
+            }
             _ => exit_usage(),
         }
     }
@@ -130,14 +158,31 @@ fn main() {
         eprintln!("Error: {e}");
         std::process::exit(1)
     });
-    let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
     let local = exe_dir.is_some_and(|d| std::path::Path::new(&x.path).parent() == Some(d.as_path()));
-    println!("Loaded {} ({})", x.path, if local { "local copy, proxy under test" } else { "system XInput" });
+    println!(
+        "Loaded {} ({})",
+        x.path,
+        if local {
+            "local copy, proxy under test"
+        } else {
+            "system XInput"
+        }
+    );
 
     if let Some(i) = rumble {
         let mut on = [32768u16, 32768u16];
         let r = unsafe { (x.set_state)(i, &mut on) };
-        println!("Rumble index {i}: {}", if r == 0 { "sent".to_string() } else { format!("error {r}") });
+        println!(
+            "Rumble index {i}: {}",
+            if r == 0 {
+                "sent".to_string()
+            } else {
+                format!("error {r}")
+            }
+        );
         std::thread::sleep(Duration::from_millis(1000));
         unsafe { (x.set_state)(i, &mut [0, 0]) };
     }

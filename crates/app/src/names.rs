@@ -7,7 +7,7 @@ use cps_core::mapping::{DeviceId, SLOTS, SlotState};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
-    CM_GETIDLIST_FILTER_PRESENT, CM_Get_DevNode_PropertyW, CM_Get_Device_ID_ListW, CM_Get_Device_ID_List_SizeW,
+    CM_GETIDLIST_FILTER_PRESENT, CM_Get_DevNode_PropertyW, CM_Get_Device_ID_List_SizeW, CM_Get_Device_ID_ListW,
     CM_Get_Device_IDW, CM_Get_Parent, CM_LOCATE_DEVNODE_NORMAL, CM_Locate_DevNodeW, CR_SUCCESS,
 };
 use windows_sys::Win32::Devices::Properties::{
@@ -26,7 +26,10 @@ fn present_devices() -> Vec<String> {
         if CM_Get_Device_ID_ListW(std::ptr::null(), buf.as_mut_ptr(), len, CM_GETIDLIST_FILTER_PRESENT) != CR_SUCCESS {
             return Vec::new();
         }
-        buf.split(|&c| c == 0).filter(|s| !s.is_empty()).map(String::from_utf16_lossy).collect()
+        buf.split(|&c| c == 0)
+            .filter(|s| !s.is_empty())
+            .map(String::from_utf16_lossy)
+            .collect()
     }
 }
 
@@ -56,7 +59,8 @@ fn node_names(devinst: u32, id: String) -> NodeNames {
     NodeNames {
         instance_id: id,
         bus_reported: property(devinst, &DEVPKEY_Device_BusReportedDeviceDesc),
-        friendly: property(devinst, &DEVPKEY_Device_FriendlyName).or_else(|| property(devinst, &DEVPKEY_Device_DeviceDesc)),
+        friendly: property(devinst, &DEVPKEY_Device_FriendlyName)
+            .or_else(|| property(devinst, &DEVPKEY_Device_DeviceDesc)),
     }
 }
 

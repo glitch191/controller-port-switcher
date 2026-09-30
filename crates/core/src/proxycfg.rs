@@ -216,7 +216,10 @@ impl<'a> Parser<'a> {
 mod tests {
     use super::*;
 
-    const HORI: DeviceId = DeviceId { vid: 0x0F0D, pid: 0x008C };
+    const HORI: DeviceId = DeviceId {
+        vid: 0x0F0D,
+        pid: 0x008C,
+    };
 
     #[test]
     fn parses_full_config() {
@@ -228,7 +231,16 @@ mod tests {
         assert!(cfg.log);
         assert_eq!(
             cfg.players,
-            [Rule::Device { id: HORI, instance: 0, slot: 1 }, Rule::Slot(3), Rule::None, Rule::Auto]
+            [
+                Rule::Device {
+                    id: HORI,
+                    instance: 0,
+                    slot: 1
+                },
+                Rule::Slot(3),
+                Rule::None,
+                Rule::Auto
+            ]
         );
     }
 
@@ -262,11 +274,27 @@ mod tests {
         {
             let cfg = crate::appcfg::proxy_config_json(
                 true,
-                &[Rule::Device { id: HORI, instance: 1, slot: 2 }, Rule::None, Rule::Slot(0), Rule::Auto],
+                &[
+                    Rule::Device {
+                        id: HORI,
+                        instance: 1,
+                        slot: 2,
+                    },
+                    Rule::None,
+                    Rule::Slot(0),
+                    Rule::Auto,
+                ],
             );
             let parsed = parse(cfg.as_bytes()).unwrap();
             assert!(parsed.log);
-            assert_eq!(parsed.players[0], Rule::Device { id: HORI, instance: 1, slot: 2 });
+            assert_eq!(
+                parsed.players[0],
+                Rule::Device {
+                    id: HORI,
+                    instance: 1,
+                    slot: 2
+                }
+            );
             assert_eq!(parsed.players[2], Rule::Slot(0));
         }
     }

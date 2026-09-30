@@ -10,7 +10,11 @@ const TARGETS: [(&str, &str); 2] = [("X64", "x86_64-pc-windows-msvc"), ("X86", "
 
 fn main() {
     let app_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let root = app_dir.parent().and_then(|p| p.parent()).expect("workspace root").to_path_buf();
+    let root = app_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("workspace root")
+        .to_path_buf();
     // A separate target directory avoids waiting on the lock of the outer build.
     let target_dir = root.join("target").join("proxy");
 
@@ -42,7 +46,11 @@ fn main() {
         );
         for dll in DLLS {
             let path = target_dir.join(triple).join("release").join(format!("{dll}.dll"));
-            println!("cargo:rustc-env=CPS_DLL_{arch}_{}={}", dll.to_uppercase(), path.display());
+            println!(
+                "cargo:rustc-env=CPS_DLL_{arch}_{}={}",
+                dll.to_uppercase(),
+                path.display()
+            );
         }
     }
 

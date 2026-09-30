@@ -13,6 +13,12 @@ pub struct AppConfig {
     pub default_players: [Rule; SLOTS],
     #[serde(default)]
     pub games: Vec<Game>,
+    /// Shortcut for "Swap ports 1 and 2", for example "Ctrl+Alt+S". None by default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub swap_hotkey: Option<String>,
+    /// Whether the app starts with Windows. None until the first launch sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_with_windows: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -60,7 +66,13 @@ impl Serialize for Rule {
             Rule::Slot(n) => ("slot", None, None, Some(n)),
             Rule::Device { id, instance, slot } => ("device", Some(id.to_string()), Some(instance), Some(slot)),
         };
-        RuleRepr { rule: rule.into(), device, instance, slot }.serialize(s)
+        RuleRepr {
+            rule: rule.into(),
+            device,
+            instance,
+            slot,
+        }
+        .serialize(s)
     }
 }
 
@@ -72,16 +84,24 @@ impl<'de> Deserialize<'de> for Rule {
         match r.rule.as_str() {
             "auto" => Ok(Rule::Auto),
             "none" => Ok(Rule::None),
-            "slot" => slot.map(Rule::Slot).ok_or_else(|| D::Error::custom("\"slot\" must be 0-3")),
+            "slot" => slot
+                .map(Rule::Slot)
+                .ok_or_else(|| D::Error::custom("\"slot\" must be 0-3")),
             "device" => {
                 let id = r
                     .device
                     .as_deref()
                     .and_then(|s| DeviceId::parse(s.as_bytes()))
                     .ok_or_else(|| D::Error::custom("\"device\" must look like \"045E:02FF\""))?;
-                Ok(Rule::Device { id, instance: r.instance.unwrap_or(0), slot: slot.unwrap_or(0) })
+                Ok(Rule::Device {
+                    id,
+                    instance: r.instance.unwrap_or(0),
+                    slot: slot.unwrap_or(0),
+                })
             }
-            other => Err(D::Error::custom(format!("unknown rule \"{other}\" (use auto, none, slot or device)"))),
+            other => Err(D::Error::custom(format!(
+                "unknown rule \"{other}\" (use auto, none, slot or device)"
+            ))),
         }
     }
 }
@@ -94,7 +114,12 @@ pub fn proxy_config_json(log: bool, players: &[Rule; SLOTS]) -> String {
         log: bool,
         players: &'a [Rule; SLOTS],
     }
-    let mut s = serde_json::to_string_pretty(&Out { version: VERSION, log, players }).unwrap_or_default();
+    let mut s = serde_json::to_string_pretty(&Out {
+        version: VERSION,
+        log,
+        players,
+    })
+    .unwrap_or_default();
     s.push('\n');
     s
 }
@@ -106,7 +131,14 @@ mod tests {
     #[test]
     fn rule_round_trip() {
         let rules = [
-            Rule::Device { id: DeviceId { vid: 0x0F0D, pid: 0x008C }, instance: 0, slot: 1 },
+            Rule::Device {
+                id: DeviceId {
+                    vid: 0x0F0D,
+                    pid: 0x008C,
+                },
+                instance: 0,
+                slot: 1,
+            },
             Rule::Slot(2),
             Rule::None,
             Rule::Auto,
@@ -119,7 +151,8 @@ mod tests {
 
     #[test]
     fn missing_fields_default() {
-        let g: Game = serde_json::from_str(r#"{"name":"g","exe":"C:\\g.exe","arch":"x64","dll":"xinput1_3.dll"}"#).unwrap();
+        let g: Game =
+            serde_json::from_str(r#"{"name":"g","exe":"C:\\g.exe","arch":"x64","dll":"xinput1_3.dll"}"#).unwrap();
         assert_eq!(g.players, None);
         assert_eq!(g.rules(&[Rule::None; 4]), [Rule::None; 4]);
         assert!(!g.log);

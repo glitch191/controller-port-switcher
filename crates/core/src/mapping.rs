@@ -26,7 +26,10 @@ impl DeviceId {
         if s.len() != 9 || s[4] != b':' {
             return None;
         }
-        Some(Self { vid: hex16(&s[..4])?, pid: hex16(&s[5..])? })
+        Some(Self {
+            vid: hex16(&s[..4])?,
+            pid: hex16(&s[5..])?,
+        })
     }
 }
 
@@ -78,7 +81,11 @@ pub struct SlotState {
 
 impl SlotState {
     pub fn connected(subtype: u8, vid: u16, pid: u16) -> Self {
-        Self { connected: true, subtype, id: Some(DeviceId { vid, pid }) }
+        Self {
+            connected: true,
+            subtype,
+            id: Some(DeviceId { vid, pid }),
+        }
     }
 }
 
@@ -91,9 +98,11 @@ pub fn instance_of(slots: &[SlotState; SLOTS], slot: usize) -> u8 {
 /// Builds the rule that targets whatever is currently in `slot`.
 pub fn rule_for_slot(slots: &[SlotState; SLOTS], slot: usize) -> Rule {
     match slots[slot].id {
-        Some(id) if slots[slot].connected => {
-            Rule::Device { id, instance: instance_of(slots, slot), slot: slot as u8 }
-        }
+        Some(id) if slots[slot].connected => Rule::Device {
+            id,
+            instance: instance_of(slots, slot),
+            slot: slot as u8,
+        },
         _ => Rule::Slot(slot as u8),
     }
 }
@@ -180,16 +189,31 @@ pub fn player_for_slot(packed: u32, slot: u8) -> Option<u8> {
 mod tests {
     use super::*;
 
-    const XBOX: DeviceId = DeviceId { vid: 0x045E, pid: 0x02FF };
-    const HORI: DeviceId = DeviceId { vid: 0x0F0D, pid: 0x008C };
-    const EMPTY: SlotState = SlotState { connected: false, subtype: 0, id: None };
+    const XBOX: DeviceId = DeviceId {
+        vid: 0x045E,
+        pid: 0x02FF,
+    };
+    const HORI: DeviceId = DeviceId {
+        vid: 0x0F0D,
+        pid: 0x008C,
+    };
+    const EMPTY: SlotState = SlotState {
+        connected: false,
+        subtype: 0,
+        id: None,
+    };
 
     fn dev(id: DeviceId, instance: u8, slot: u8) -> Rule {
         Rule::Device { id, instance, slot }
     }
 
     fn two_devices() -> [SlotState; 4] {
-        [SlotState::connected(1, 0x045E, 0x02FF), SlotState::connected(1, 0x0F0D, 0x008C), EMPTY, EMPTY]
+        [
+            SlotState::connected(1, 0x045E, 0x02FF),
+            SlotState::connected(1, 0x0F0D, 0x008C),
+            EMPTY,
+            EMPTY,
+        ]
     }
 
     #[test]
@@ -207,7 +231,12 @@ mod tests {
     #[test]
     fn device_follows_slot_changes() {
         // Same rules after the devices swapped their natural slots.
-        let slots = [SlotState::connected(1, 0x0F0D, 0x008C), SlotState::connected(1, 0x045E, 0x02FF), EMPTY, EMPTY];
+        let slots = [
+            SlotState::connected(1, 0x0F0D, 0x008C),
+            SlotState::connected(1, 0x045E, 0x02FF),
+            EMPTY,
+            EMPTY,
+        ];
         let rules = [dev(HORI, 0, 1), dev(XBOX, 0, 0), Rule::Auto, Rule::Auto];
         assert_eq!(resolve(&rules, &slots), [0, 1, 2, 3]);
     }
@@ -239,7 +268,12 @@ mod tests {
 
     #[test]
     fn two_devices_with_same_id() {
-        let slots = [SlotState::connected(1, 0x045E, 0x02FF), SlotState::connected(1, 0x045E, 0x02FF), EMPTY, EMPTY];
+        let slots = [
+            SlotState::connected(1, 0x045E, 0x02FF),
+            SlotState::connected(1, 0x045E, 0x02FF),
+            EMPTY,
+            EMPTY,
+        ];
         let rules = [dev(XBOX, 1, 1), dev(XBOX, 0, 0), Rule::Auto, Rule::Auto];
         assert_eq!(resolve(&rules, &slots), [1, 0, 2, 3]);
         assert_eq!(instance_of(&slots, 1), 1);
@@ -254,7 +288,11 @@ mod tests {
 
     #[test]
     fn falls_back_to_slot_hint_without_ids() {
-        let no_ids = SlotState { connected: true, subtype: 1, id: None };
+        let no_ids = SlotState {
+            connected: true,
+            subtype: 1,
+            id: None,
+        };
         let slots = [no_ids, no_ids, EMPTY, EMPTY];
         let rules = [dev(HORI, 0, 1), dev(XBOX, 0, 0), Rule::Auto, Rule::Auto];
         assert_eq!(resolve(&rules, &slots), [1, 0, 2, 3]);

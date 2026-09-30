@@ -12,7 +12,9 @@ use windows_sys::Win32::Foundation::HWND;
 const BACKUP_SUFFIX: &str = ".cps-backup";
 
 pub fn config_dir() -> PathBuf {
-    let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    let base = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
     base.join(PROJECT)
 }
 
@@ -55,6 +57,8 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 pub enum Status {
     NotInstalled,
     Installed,
+    /// Our proxy, from another version of the app: "Update proxy" replaces it.
+    Outdated,
     Foreign,
     ExeMissing,
 }
@@ -64,9 +68,15 @@ impl Status {
         match self {
             Status::NotInstalled => "not installed",
             Status::Installed => "installed",
+            Status::Outdated => "outdated",
             Status::Foreign => "foreign DLL present",
             Status::ExeMissing => "exe not found",
         }
+    }
+
+    /// True when the DLL in the game folder is this proxy (any version).
+    pub fn is_ours(self) -> bool {
+        matches!(self, Status::Installed | Status::Outdated)
     }
 }
 
@@ -85,7 +95,10 @@ pub fn status(game: &Game) -> Status {
         return Status::ExeMissing;
     }
     match std::fs::read(game_dir(game).join(&game.dll)) {
-        Ok(bytes) if pe::is_proxy(&bytes) => Status::Installed,
+        Ok(bytes) if pe::is_proxy(&bytes) => match target(game) {
+            Ok((arch, dll)) if bytes != dll_bytes(arch, dll) => Status::Outdated,
+            _ => Status::Installed,
+        },
         Ok(_) => Status::Foreign,
         Err(_) => Status::NotInstalled,
     }
@@ -99,7 +112,13 @@ fn target(game: &Game) -> Result<(Arch, &'static str), String> {
         .iter()
         .copied()
         .find(|d| d.eq_ignore_ascii_case(&game.dll))
-        .ok_or_else(|| format!("config.json: \"dll\" of {} must be one of {}.", game.name, XINPUT_DLLS.join(", ")))?;
+        .ok_or_else(|| {
+            format!(
+                "config.json: \"dll\" of {} must be one of {}.",
+                game.name,
+                XINPUT_DLLS.join(", ")
+            )
+        })?;
     Ok((arch, dll))
 }
 
@@ -117,7 +136,10 @@ fn dll_bytes(arch: Arch, dll: &str) -> &'static [u8] {
 /// Turns an I/O error into a message that says what to do.
 fn io_message(e: &std::io::Error, action: &str, path: &Path) -> String {
     let dir = path.parent().unwrap_or(path).display();
-    let file = path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+    let file = path
+        .file_name()
+        .map(|f| f.to_string_lossy().into_owned())
+        .unwrap_or_default();
     match (e.kind(), e.raw_os_error()) {
         (_, Some(32 | 33)) => format!("{file} is in use: close the game, then try again."),
         (ErrorKind::PermissionDenied, _) => format!(
@@ -150,7 +172,10 @@ fn plan_install(game: &Game) -> Result<Plan, String> {
     let backup = backup_path(&dll);
     let status = status(game);
     if status == Status::ExeMissing {
-        return Err(format!("{} does not exist any more. Remove the game from the list and add it again.", game.exe));
+        return Err(format!(
+            "{} does not exist any more. Remove the game from the list and add it again.",
+            game.exe
+        ));
     }
     if status == Status::Foreign && backup.exists() {
         return Err(format!(
@@ -159,7 +184,13 @@ fn plan_install(game: &Game) -> Result<Plan, String> {
             backup.display()
         ));
     }
-    Ok(Plan { arch, dll_name, dll, backup, status })
+    Ok(Plan {
+        arch,
+        dll_name,
+        dll,
+        backup,
+        status,
+    })
 }
 
 /// Installs or updates the proxy after a confirmation that mentions anti-cheat systems
@@ -167,7 +198,7 @@ fn plan_install(game: &Game) -> Result<Plan, String> {
 /// Returns true when the proxy was written (false if the user declined).
 pub fn install(hwnd: HWND, game: &Game, default: &[Rule; SLOTS]) -> Result<bool, String> {
     let plan = plan_install(game)?;
-    if plan.status != Status::Installed {
+    if !plan.status.is_ours() {
         let mut text = format!(
             "Install the proxy for {}?
 
@@ -220,7 +251,7 @@ pub fn remove_proxy(game: &Game) -> Result<(), String> {
         _ => Ok(()),
     };
     match status(game) {
-        Status::Installed => remove(&dll)?,
+        Status::Installed | Status::Outdated => remove(&dll)?,
         Status::Foreign => return Err(format!("{} is not this proxy; it was left in place.", dll.display())),
         Status::NotInstalled | Status::ExeMissing => {}
     }
@@ -229,6 +260,32 @@ pub fn remove_proxy(game: &Game) -> Result<(), String> {
     }
     remove(&dir.join(PROXY_CONFIG_FILE))?;
     remove(&dir.join(PROXY_LOG_FILE))
+}
+
+/// Removes the proxy from every listed game that has it. Returns how many were
+/// removed, or the list of failures.
+pub fn remove_all(cfg: &AppConfig) -> Result<usize, String> {
+    let mut removed = 0;
+    let mut errors = Vec::new();
+    for game in cfg.games.iter().filter(|g| status(g).is_ours()) {
+        match remove_proxy(game) {
+            Ok(()) => removed += 1,
+            Err(e) => errors.push(format!("{}: {e}", game.name)),
+        }
+    }
+    if errors.is_empty() {
+        Ok(removed)
+    } else {
+        Err(format!(
+            "Some proxies were not removed:
+
+{}",
+            errors.join(
+                "
+"
+            )
+        ))
+    }
 }
 
 /// Asks for an executable and adds it to the list.
@@ -244,7 +301,10 @@ pub fn add_running(hwnd: HWND, exe: &Path, dll: &'static str) -> Result<(), Stri
     let (cfg, g) = add_exe(hwnd, exe, Some(dll))?;
     let game = &cfg.games[g];
     if install(hwnd, game, &cfg.default_players)? {
-        win::info(hwnd, &format!("Proxy installed. Restart {} so that it loads the proxy.", game.name));
+        win::info(
+            hwnd,
+            &format!("Proxy installed. Restart {} so that it loads the proxy.", game.name),
+        );
     }
     Ok(())
 }
@@ -259,7 +319,10 @@ fn add_exe(hwnd: HWND, exe: &Path, dll: Option<&'static str>) -> Result<(AppConf
     }
     let bytes = std::fs::read(exe).map_err(|e| format!("Cannot read {exe_str}: {e}"))?;
     let found = pe::detect(&bytes).map_err(|e| format!("Cannot add {exe_str}: {e}."))?;
-    let name = exe.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| exe_str.clone());
+    let name = exe
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| exe_str.clone());
     let unsure = dll.is_none()
         && match found.source {
             DllSource::ImportTable | DllSource::DelayImport => false,
@@ -304,9 +367,15 @@ pub fn set_order(cfg: &mut AppConfig, games: &[usize], rules: [Rule; SLOTS]) -> 
         }
     }
     save(cfg)?;
-    let affected = |i: usize, g: &Game| if games.is_empty() { g.players.is_none() } else { games.contains(&i) };
+    let affected = |i: usize, g: &Game| {
+        if games.is_empty() {
+            g.players.is_none()
+        } else {
+            games.contains(&i)
+        }
+    };
     for (i, game) in cfg.games.iter().enumerate() {
-        if affected(i, game) && status(game) == Status::Installed {
+        if affected(i, game) && status(game).is_ours() {
             write_proxy_config(game, &cfg.default_players)?;
         }
     }
@@ -338,7 +407,12 @@ mod tests {
         let mut v: Vec<_> = std::fs::read_dir(dir)
             .unwrap()
             .map(|e| e.unwrap())
-            .map(|e| (e.file_name().to_string_lossy().into_owned(), std::fs::read(e.path()).unwrap()))
+            .map(|e| {
+                (
+                    e.file_name().to_string_lossy().into_owned(),
+                    std::fs::read(e.path()).unwrap(),
+                )
+            })
             .collect();
         v.sort();
         v
@@ -367,12 +441,38 @@ mod tests {
         assert!(status(&game) == Status::Foreign);
         install_files(&game, &plan_install(&game).unwrap(), &[Rule::Auto; SLOTS]).unwrap();
         assert!(status(&game) == Status::Installed);
-        assert_eq!(std::fs::read(dir.join("xinput1_3.dll.cps-backup")).unwrap(), b"someone else's dll");
+        assert_eq!(
+            std::fs::read(dir.join("xinput1_3.dll.cps-backup")).unwrap(),
+            b"someone else's dll"
+        );
         // Removing a foreign DLL is refused; removing our proxy restores the original.
         remove_proxy(&game).unwrap();
         assert_eq!(listing(&dir), before);
         assert!(remove_proxy(&game).is_err());
         assert_eq!(listing(&dir), before);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn older_proxy_is_outdated_and_updated() {
+        let (dir, game) = test_game("outdated");
+        // Another version of the proxy: has the marker but different bytes.
+        let mut old = cps_core::PROXY_MARKER.to_vec();
+        old.extend_from_slice(b" older build");
+        std::fs::write(dir.join("xinput1_3.dll"), &old).unwrap();
+        assert_eq!(status(&game), Status::Outdated);
+        install_files(&game, &plan_install(&game).unwrap(), &[Rule::Auto; SLOTS]).unwrap();
+        assert_eq!(status(&game), Status::Installed);
+        assert!(
+            !dir.join("xinput1_3.dll.cps-backup").exists(),
+            "our own DLL is not backed up"
+        );
+        let cfg = AppConfig {
+            games: vec![game.clone()],
+            ..Default::default()
+        };
+        assert_eq!(remove_all(&cfg), Ok(1));
+        assert_eq!(status(&game), Status::NotInstalled);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

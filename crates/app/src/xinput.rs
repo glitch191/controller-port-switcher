@@ -3,6 +3,7 @@
 
 use crate::win::wide;
 use cps_core::mapping::{SLOTS, SlotState};
+use cps_core::tooltip::Battery;
 use std::ffi::c_void;
 use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW;
@@ -47,11 +48,15 @@ struct CapabilitiesEx {
 type GetState = unsafe extern "system" fn(u32, *mut State) -> u32;
 type GetCaps = unsafe extern "system" fn(u32, u32, *mut Capabilities) -> u32;
 type GetCapsEx = unsafe extern "system" fn(u32, u32, u32, *mut CapabilitiesEx) -> u32;
+type SetState = unsafe extern "system" fn(u32, *mut [u16; 2]) -> u32;
+type GetBattery = unsafe extern "system" fn(u32, u8, *mut [u8; 2]) -> u32;
 
 pub struct XInput {
     get_state: GetState,
     get_caps: GetCaps,
     get_caps_ex: Option<GetCapsEx>,
+    set_state: Option<SetState>,
+    get_battery: Option<GetBattery>,
 }
 
 impl XInput {
@@ -70,6 +75,10 @@ impl XInput {
                 get_caps: std::mem::transmute::<*const c_void, GetCaps>(get(c"XInputGetCapabilities".as_ptr().cast())?),
                 // Undocumented XInputGetCapabilitiesEx: reports the USB vendor and product id.
                 get_caps_ex: get(108 as *const u8).map(|f| std::mem::transmute::<*const c_void, GetCapsEx>(f)),
+                set_state: get(c"XInputSetState".as_ptr().cast())
+                    .map(|f| std::mem::transmute::<*const c_void, SetState>(f)),
+                get_battery: get(c"XInputGetBatteryInformation".as_ptr().cast())
+                    .map(|f| std::mem::transmute::<*const c_void, GetBattery>(f)),
             })
         }
     }
@@ -87,10 +96,33 @@ impl XInput {
             }
             let mut c = Capabilities::default();
             if unsafe { (self.get_caps)(i, 0, &mut c) } == 0 {
-                *slot = SlotState { connected: true, subtype: c.subtype, id: None };
+                *slot = SlotState {
+                    connected: true,
+                    subtype: c.subtype,
+                    id: None,
+                };
             }
         }
         out
+    }
+
+    /// Sets both vibration motors of a physical slot (0 stops them).
+    pub fn vibrate(&self, slot: u32, strength: u16) {
+        if let Some(f) = self.set_state {
+            let mut v = [strength, strength];
+            unsafe { f(slot, &mut v) };
+        }
+    }
+
+    /// Battery level of a wireless controller in a physical slot.
+    pub fn battery(&self, slot: u32) -> Option<Battery> {
+        let f = self.get_battery?;
+        // [BatteryType, BatteryLevel]; devtype 0 = BATTERY_DEVTYPE_GAMEPAD.
+        let mut info = [0u8; 2];
+        if unsafe { f(slot, 0, &mut info) } != 0 {
+            return None;
+        }
+        Battery::from_xinput(info[0], info[1])
     }
 
     /// Pressed inputs per slot as a bit set (buttons, triggers, sticks pushed far),

@@ -32,7 +32,9 @@ pub fn is_xinput_node(instance_id: &str, id: DeviceId) -> bool {
     let up = instance_id.to_ascii_uppercase();
     let pid = format!("PID_{:04X}", id.pid);
     let pid_bt = format!("PID&{:04X}", id.pid);
-    up.contains("IG_") && vid_patterns(id.vid).iter().any(|v| up.contains(v.as_str())) && (up.contains(&pid) || up.contains(&pid_bt))
+    up.contains("IG_")
+        && vid_patterns(id.vid).iter().any(|v| up.contains(v.as_str()))
+        && (up.contains(&pid) || up.contains(&pid_bt))
 }
 
 /// True when an ancestor still belongs to the same physical device (hubs and
@@ -83,21 +85,41 @@ mod tests {
 
     fn node(id: &str, bus: &str, friendly: &str) -> NodeNames {
         let opt = |s: &str| (!s.is_empty()).then(|| s.to_string());
-        NodeNames { instance_id: id.into(), bus_reported: opt(bus), friendly: opt(friendly) }
+        NodeNames {
+            instance_id: id.into(),
+            bus_reported: opt(bus),
+            friendly: opt(friendly),
+        }
     }
 
     // Chains read from the reference hardware.
     fn hori() -> Vec<NodeNames> {
         vec![
-            node(r"USB\VID_0F0D&PID_008C&IG_00\9&33E8CE26&1&00", "Controller (Real Arcade Pro.4)", "USB Input Device"),
-            node(r"USB\VID_0F0D&PID_008C\30B74CE6", "Real Arcade Pro.4", "Xbox 360 Controller for Windows"),
+            node(
+                r"USB\VID_0F0D&PID_008C&IG_00\9&33E8CE26&1&00",
+                "Controller (Real Arcade Pro.4)",
+                "USB Input Device",
+            ),
+            node(
+                r"USB\VID_0F0D&PID_008C\30B74CE6",
+                "Real Arcade Pro.4",
+                "Xbox 360 Controller for Windows",
+            ),
         ]
     }
 
     fn xbox() -> Vec<NodeNames> {
         vec![
-            node(r"USB\VID_045E&PID_02FF&IG_00\00&00&0000ADB7588AED7E", "", "USB Input Device"),
-            node(r"USB\VID_045E&PID_0B12\3039373130323839373633343039", "Controller", "Xbox Controller"),
+            node(
+                r"USB\VID_045E&PID_02FF&IG_00\00&00&0000ADB7588AED7E",
+                "",
+                "USB Input Device",
+            ),
+            node(
+                r"USB\VID_045E&PID_0B12\3039373130323839373633343039",
+                "Controller",
+                "Xbox Controller",
+            ),
         ]
     }
 
@@ -109,25 +131,45 @@ mod tests {
 
     #[test]
     fn interface_product_string_is_unwrapped() {
-        let chain = vec![node(r"USB\VID_0F0D&PID_008C&IG_00\x", "Controller (Real Arcade Pro.4)", "")];
+        let chain = vec![node(
+            r"USB\VID_0F0D&PID_008C&IG_00\x",
+            "Controller (Real Arcade Pro.4)",
+            "",
+        )];
         assert_eq!(pick(&chain).as_deref(), Some("Real Arcade Pro.4"));
     }
 
     #[test]
     fn only_generic_names_give_none() {
-        let chain = vec![node(r"HID\VID_1234&PID_5678&IG_00\x", "Controller", "HID-compliant game controller")];
+        let chain = vec![node(
+            r"HID\VID_1234&PID_5678&IG_00\x",
+            "Controller",
+            "HID-compliant game controller",
+        )];
         assert_eq!(pick(&chain), None);
     }
 
     #[test]
     fn matches_xinput_nodes() {
-        let xbox_id = DeviceId { vid: 0x045E, pid: 0x02FF };
-        assert!(is_xinput_node(r"HID\VID_045E&PID_02FF&IG_00\8&1F197B8D&0&0000", xbox_id));
+        let xbox_id = DeviceId {
+            vid: 0x045E,
+            pid: 0x02FF,
+        };
+        assert!(is_xinput_node(
+            r"HID\VID_045E&PID_02FF&IG_00\8&1F197B8D&0&0000",
+            xbox_id
+        ));
         assert!(is_xinput_node(r"usb\vid_045e&pid_02ff&ig_00\00&00", xbox_id));
         assert!(!is_xinput_node(r"USB\VID_045E&PID_0B12\3039", xbox_id));
         assert!(!is_xinput_node(r"HID\VID_045E&PID_02FE&IG_00\x", xbox_id));
-        let bt = DeviceId { vid: 0x045E, pid: 0x0B13 };
-        assert!(is_xinput_node(r"HID\{00001812-0000-1000-8000-00805F9B34FB}_DEV_VID&02045E_PID&0B13_REV&0509_IG_00\x", bt));
+        let bt = DeviceId {
+            vid: 0x045E,
+            pid: 0x0B13,
+        };
+        assert!(is_xinput_node(
+            r"HID\{00001812-0000-1000-8000-00805F9B34FB}_DEV_VID&02045E_PID&0B13_REV&0509_IG_00\x",
+            bt
+        ));
         assert!(same_vendor(r"USB\VID_045E&PID_0B12\3039", 0x045E));
         assert!(!same_vendor(r"USB\ROOT_HUB30\7&32FCECFC&0&0", 0x045E));
     }

@@ -56,7 +56,10 @@ pub fn running() -> Vec<Process> {
                 && e.th32ProcessID != me
                 && let Some(exe) = image_path(e.th32ProcessID)
             {
-                out.push(Process { pid: e.th32ProcessID, exe });
+                out.push(Process {
+                    pid: e.th32ProcessID,
+                    exe,
+                });
             }
             more = Process32NextW(snap, &mut e) != 0;
         }
@@ -90,7 +93,11 @@ pub fn xinput_modules(modules: &[PathBuf]) -> Vec<&'static str> {
     XINPUT_DLLS
         .iter()
         .copied()
-        .filter(|d| modules.iter().any(|m| m.file_name().is_some_and(|f| f.eq_ignore_ascii_case(d))))
+        .filter(|d| {
+            modules
+                .iter()
+                .any(|m| m.file_name().is_some_and(|f| f.eq_ignore_ascii_case(d)))
+        })
         .collect()
 }
 
@@ -106,7 +113,10 @@ pub struct Candidate {
 
 /// Programs outside the Windows folder that have an XInput DLL loaded.
 pub fn xinput_programs() -> Vec<Candidate> {
-    let windir = std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".into()).to_lowercase() + "\\";
+    let windir = std::env::var("WINDIR")
+        .unwrap_or_else(|_| r"C:\Windows".into())
+        .to_lowercase()
+        + "\\";
     let mut out: Vec<Candidate> = Vec::new();
     for p in running() {
         let in_windows = p.exe.to_string_lossy().to_lowercase().starts_with(&windir);

@@ -252,14 +252,25 @@ fn file_mtime(path: &[u16; PATH_MAX]) -> u64 {
     if ok == 0 {
         return 0;
     }
-    let FILETIME { dwLowDateTime: lo, dwHighDateTime: hi } = data.ftLastWriteTime;
+    let FILETIME {
+        dwLowDateTime: lo,
+        dwHighDateTime: hi,
+    } = data.ftLastWriteTime;
     ((hi as u64) << 32 | lo as u64).max(1)
 }
 
 fn read_config(path: &[u16; PATH_MAX]) -> Option<proxycfg::ProxyConfig> {
     let share = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
     let h = unsafe {
-        CreateFileW(path.as_ptr(), GENERIC_READ, share, null_mut(), OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, null_mut())
+        CreateFileW(
+            path.as_ptr(),
+            GENERIC_READ,
+            share,
+            null_mut(),
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            null_mut(),
+        )
     };
     if h == INVALID_HANDLE_VALUE {
         return None;
@@ -314,7 +325,11 @@ fn query_slots() -> [SlotState; SLOTS] {
         for (i, slot) in out.iter_mut().enumerate() {
             let mut c = Capabilities::default();
             if unsafe { f(i as u32, 0, &mut c) } == ERROR_SUCCESS {
-                *slot = SlotState { connected: true, subtype: c.subtype, id: None };
+                *slot = SlotState {
+                    connected: true,
+                    subtype: c.subtype,
+                    id: None,
+                };
             }
         }
     }
@@ -399,7 +414,9 @@ pub extern "system" fn XInputGetKeystroke(user: u32, reserved: u32, keystroke: *
         }
         return ERROR_EMPTY;
     }
-    let Some(slot) = slot_for(user) else { return ERROR_DEVICE_NOT_CONNECTED };
+    let Some(slot) = slot_for(user) else {
+        return ERROR_DEVICE_NOT_CONNECTED;
+    };
     let r = unsafe { f(slot, reserved, keystroke) };
     if r == ERROR_SUCCESS && !keystroke.is_null() && (user as usize) < SLOTS {
         unsafe { (*keystroke).user_index = user as u8 };

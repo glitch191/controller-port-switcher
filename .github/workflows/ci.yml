@@ -1,0 +1,45 @@
+# Checks formatting, lints and tests, and builds the release binaries on every push
+# and pull request. rust-toolchain.toml installs the toolchain and both targets.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            crates/proxy -> ../../target/proxy
+
+      - name: Format
+        run: |
+          cargo fmt --all --check
+          cd crates/proxy
+          cargo fmt --all --check
+
+      - name: Clippy
+        run: |
+          cargo clippy --release --workspace --all-targets -- -D warnings
+          cd crates/proxy
+          cargo clippy --release --workspace --target x86_64-pc-windows-msvc -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Build
+        run: cargo build --release
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: controller-port-switcher
+          path: |
+            target/release/controller-port-switcher.exe
+            target/release/xinput-probe.exe

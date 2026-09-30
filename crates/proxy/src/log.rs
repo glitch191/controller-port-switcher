@@ -40,7 +40,15 @@ fn line() -> Line {
 fn append(path: &[u16], mut l: Line) {
     let _ = l.write_str("\r\n");
     let h = unsafe {
-        CreateFileW(path.as_ptr(), FILE_APPEND_DATA, FILE_SHARE_READ, null_mut(), OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, null_mut())
+        CreateFileW(
+            path.as_ptr(),
+            FILE_APPEND_DATA,
+            FILE_SHARE_READ,
+            null_mut(),
+            OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            null_mut(),
+        )
     };
     if h == INVALID_HANDLE_VALUE {
         return;
@@ -75,7 +83,11 @@ pub fn map(path: &[u16], packed: u32, slots: Option<&[SlotState; SLOTS]>) {
     let mut l = line();
     let _ = l.write_str("mapping:");
     for (p, s) in mapping::unpack(packed).iter().enumerate() {
-        let _ = if *s == NO_SLOT { write!(l, " P{}=none", p + 1) } else { write!(l, " P{}=slot {s}", p + 1) };
+        let _ = if *s == NO_SLOT {
+            write!(l, " P{}=none", p + 1)
+        } else {
+            write!(l, " P{}=slot {s}", p + 1)
+        };
     }
     let Some(slots) = slots else { return append(path, l) };
     let _ = l.write_str(" | slots:");
