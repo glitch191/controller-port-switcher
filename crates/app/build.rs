@@ -23,8 +23,16 @@ fn main() {
         for dll in DLLS {
             cmd.args(["-p", dll]);
         }
-        // Flags meant for the outer build would override the per-target config.
-        for var in ["CARGO_ENCODED_RUSTFLAGS", "RUSTFLAGS", "CARGO_TARGET_DIR", "CARGO_BUILD_TARGET"] {
+        // Flags and wrappers (for example clippy) meant for the outer build would
+        // override the per-target config of the proxy workspace.
+        for var in [
+            "CARGO_ENCODED_RUSTFLAGS",
+            "RUSTFLAGS",
+            "CARGO_TARGET_DIR",
+            "CARGO_BUILD_TARGET",
+            "RUSTC_WRAPPER",
+            "RUSTC_WORKSPACE_WRAPPER",
+        ] {
             cmd.env_remove(var);
         }
         let status = cmd.status().expect("failed to run cargo for the proxy DLLs");

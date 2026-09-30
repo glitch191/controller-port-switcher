@@ -132,13 +132,30 @@ pub fn resolve(rules: &[Rule; SLOTS], slots: &[SlotState; SLOTS]) -> [u8; SLOTS]
     }
     let mut free = (0..SLOTS).filter(|&s| !claimed[s]);
     for (p, rule) in rules.iter().enumerate() {
-        if *rule == Rule::Auto {
-            if let Some(s) = free.next() {
-                map[p] = s as u8;
-            }
+        if *rule == Rule::Auto
+            && let Some(s) = free.next()
+        {
+            map[p] = s as u8;
         }
     }
     map
+}
+
+/// Rules after moving whatever player `from` currently reads to player `to` (both
+/// 0-3), the player at `to` taking `from`'s place. The current order is first written
+/// out explicitly (devices where connected), so the result does not depend on Auto.
+pub fn move_port(rules: &[Rule; SLOTS], slots: &[SlotState; SLOTS], from: usize, to: usize) -> [Rule; SLOTS] {
+    let map = resolve(rules, slots);
+    let mut out = [Rule::Auto; SLOTS];
+    for (p, &s) in map.iter().enumerate() {
+        out[p] = match s {
+            NO_SLOT => Rule::None,
+            s if slots[s as usize].connected => rule_for_slot(slots, s as usize),
+            _ => Rule::Auto,
+        };
+    }
+    out.swap(from, to);
+    out
 }
 
 /// True when rules need device ids to resolve (the proxy then re-queries them).
@@ -249,6 +266,30 @@ mod tests {
         assert_eq!(DeviceId::parse(b"0F0D-008C"), None);
         assert_eq!(DeviceId::parse(b"0F0D:08C"), None);
         assert_eq!(HORI.to_string(), "0F0D:008C");
+    }
+
+    #[test]
+    fn move_stick_to_port_one() {
+        let rules = move_port(&[Rule::Auto; 4], &two_devices(), 1, 0);
+        assert_eq!(rules, [dev(HORI, 0, 1), dev(XBOX, 0, 0), Rule::Auto, Rule::Auto]);
+        assert_eq!(resolve(&rules, &two_devices()), [1, 0, 2, 3]);
+        // Moving it back restores the natural order.
+        let back = move_port(&rules, &two_devices(), 0, 1);
+        assert_eq!(resolve(&back, &two_devices()), [0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn move_to_empty_port() {
+        let rules = move_port(&[Rule::Auto; 4], &two_devices(), 0, 2);
+        assert_eq!(resolve(&rules, &two_devices()), [2, 1, 0, 3]);
+    }
+
+    #[test]
+    fn move_keeps_none_players() {
+        let rules = [Rule::None, Rule::Auto, Rule::Auto, Rule::Auto];
+        let moved = move_port(&rules, &two_devices(), 1, 2);
+        assert_eq!(moved[0], Rule::None);
+        assert_eq!(resolve(&moved, &two_devices()), [NO_SLOT, 1, 0, 2]);
     }
 
     #[test]

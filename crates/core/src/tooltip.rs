@@ -29,12 +29,13 @@ pub fn describe(slot: &SlotState) -> String {
     }
 }
 
-/// One tooltip line: "0 Gamepad 045E:02FF" or "2 Empty".
+/// One line per port, numbered 1-4 like players: "Port 1 Gamepad 045E:02FF" or
+/// "Port 3 Empty". `index` is the XInput index (0-3).
 pub fn slot_line(index: usize, slot: &SlotState) -> String {
     if slot.connected {
-        format!("{index} {}", describe(slot))
+        format!("Port {} {}", index + 1, describe(slot))
     } else {
-        format!("{index} Empty")
+        format!("Port {} Empty", index + 1)
     }
 }
 
@@ -43,11 +44,6 @@ pub fn status_text(title: &str, slots: &[SlotState; SLOTS]) -> String {
     let mut lines = vec![title.to_string()];
     lines.extend(slots.iter().enumerate().map(|(i, s)| slot_line(i, s)));
     truncate(&lines.join("\n"), TIP_MAX)
-}
-
-/// Menu label for a detected controller: "Slot 1: Gamepad 0F0D:008C".
-pub fn controller_label(index: usize, slot: &SlotState) -> String {
-    format!("Slot {index}: {}", describe(slot))
 }
 
 fn units(s: &str) -> usize {
@@ -99,15 +95,22 @@ mod tests {
         let slots = [SlotState::connected(3, 0x0F0D, 0x008C), SlotState::connected(1, 0x045E, 0x02FF), EMPTY, EMPTY];
         assert_eq!(
             status_text("controller-port-switcher", &slots),
-            "controller-port-switcher\n0 Arcade stick 0F0D:008C\n1 Gamepad 045E:02FF\n2 Empty\n3 Empty"
+            "controller-port-switcher\nPort 1 Arcade stick 0F0D:008C\nPort 2 Gamepad 045E:02FF\nPort 3 Empty\nPort 4 Empty"
         );
     }
 
     #[test]
     fn unknown_id_and_subtype() {
         let s = SlotState { connected: true, subtype: 0x42, id: None };
-        assert_eq!(slot_line(0, &s), "0 Unknown");
-        assert_eq!(controller_label(2, &SlotState::connected(1, 1, 2)), "Slot 2: Gamepad 0001:0002");
+        assert_eq!(slot_line(0, &s), "Port 1 Unknown");
+        assert_eq!(describe(&SlotState::connected(1, 1, 2)), "Gamepad 0001:0002");
+    }
+
+    #[test]
+    fn typical_status_fits_without_truncation() {
+        let s = SlotState::connected(1, 0x045E, 0x02FF);
+        let text = status_text("controller-port-switcher", &[s; 4]);
+        assert!(!text.ends_with("..."), "{text}");
     }
 
     #[test]

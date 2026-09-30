@@ -8,6 +8,9 @@ pub const APP_CONFIG_FILE: &str = "config.json";
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct AppConfig {
+    /// Order used by games that have no order of their own.
+    #[serde(default)]
+    pub default_players: [Rule; SLOTS],
     #[serde(default)]
     pub games: Vec<Game>,
 }
@@ -23,11 +26,18 @@ pub struct Game {
     /// XInput DLL the proxy is installed as, for example "xinput1_3.dll".
     /// Detected when the game is added; edit it here if the guess is wrong.
     pub dll: String,
-    #[serde(default)]
-    pub players: [Rule; SLOTS],
+    /// Order remembered for this game; None means the default order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub players: Option<[Rule; SLOTS]>,
     /// Enables the proxy log file next to the DLL.
     #[serde(default)]
     pub log: bool,
+}
+
+impl Game {
+    pub fn rules(&self, default: &[Rule; SLOTS]) -> [Rule; SLOTS] {
+        self.players.unwrap_or(*default)
+    }
 }
 
 /// JSON shape of one rule, shared with the proxy parser.
@@ -110,10 +120,12 @@ mod tests {
     #[test]
     fn missing_fields_default() {
         let g: Game = serde_json::from_str(r#"{"name":"g","exe":"C:\\g.exe","arch":"x64","dll":"xinput1_3.dll"}"#).unwrap();
-        assert_eq!(g.players, [Rule::Auto; 4]);
+        assert_eq!(g.players, None);
+        assert_eq!(g.rules(&[Rule::None; 4]), [Rule::None; 4]);
         assert!(!g.log);
         let empty: AppConfig = serde_json::from_str("{}").unwrap();
         assert!(empty.games.is_empty());
+        assert_eq!(empty.default_players, [Rule::Auto; 4]);
     }
 
     #[test]

@@ -2,6 +2,7 @@
 
 use crate::win;
 use cps_core::appcfg::{APP_CONFIG_FILE, AppConfig, Game, proxy_config_json};
+use cps_core::mapping::{Rule, SLOTS};
 use cps_core::pe::{self, Arch, DllSource};
 use cps_core::{PROJECT, PROXY_CONFIG_FILE, PROXY_LOG_FILE, XINPUT_DLLS};
 use std::io::ErrorKind;
@@ -127,9 +128,9 @@ fn io_message(e: &std::io::Error, action: &str, path: &Path) -> String {
     }
 }
 
-pub fn write_proxy_config(game: &Game) -> Result<(), String> {
+pub fn write_proxy_config(game: &Game, default: &[Rule; SLOTS]) -> Result<(), String> {
     let path = game_dir(game).join(PROXY_CONFIG_FILE);
-    write_atomic(&path, proxy_config_json(game.log, &game.players).as_bytes())
+    write_atomic(&path, proxy_config_json(game.log, &game.rules(default)).as_bytes())
         .map_err(|e| io_message(&e, "write", &path))
 }
 
@@ -163,7 +164,8 @@ fn plan_install(game: &Game) -> Result<Plan, String> {
 
 /// Installs or updates the proxy after a confirmation that mentions anti-cheat systems
 /// and, when needed, the backup of a foreign DLL.
-pub fn install(hwnd: HWND, game: &Game) -> Result<(), String> {
+/// Returns true when the proxy was written (false if the user declined).
+pub fn install(hwnd: HWND, game: &Game, default: &[Rule; SLOTS]) -> Result<bool, String> {
     let plan = plan_install(game)?;
     if plan.status != Status::Installed {
         let mut text = format!(
@@ -188,14 +190,14 @@ This writes {} ({}-bit) and {PROXY_CONFIG_FILE} to:
         }
         text += "Games protected by an anti-cheat system may refuse to start or report this DLL.";
         if !win::confirm(hwnd, &text) {
-            return Ok(());
+            return Ok(false);
         }
     }
-    install_files(game, &plan)
+    install_files(game, &plan, default).map(|_| true)
 }
 
-fn install_files(game: &Game, plan: &Plan) -> Result<(), String> {
-    write_proxy_config(game)?;
+fn install_files(game: &Game, plan: &Plan, default: &[Rule; SLOTS]) -> Result<(), String> {
+    write_proxy_config(game, default)?;
     if plan.status == Status::Foreign {
         std::fs::rename(&plan.dll, &plan.backup).map_err(|e| io_message(&e, "rename", &plan.dll))?;
     }
@@ -231,32 +233,50 @@ pub fn remove_proxy(game: &Game) -> Result<(), String> {
 
 /// Asks for an executable and adds it to the list.
 pub fn add(hwnd: HWND) -> Result<(), String> {
-    let mut cfg = load()?;
+    load()?;
     let Some(exe) = win::pick_exe(hwnd) else { return Ok(()) };
+    add_exe(hwnd, &exe, None).map(|_| ())
+}
+
+/// Adds a running program (its loaded XInput DLL is known), then offers to install
+/// the proxy right away.
+pub fn add_running(hwnd: HWND, exe: &Path, dll: &'static str) -> Result<(), String> {
+    let (cfg, g) = add_exe(hwnd, exe, Some(dll))?;
+    let game = &cfg.games[g];
+    if install(hwnd, game, &cfg.default_players)? {
+        win::info(hwnd, &format!("Proxy installed. Restart {} so that it loads the proxy.", game.name));
+    }
+    Ok(())
+}
+
+/// Adds an executable to the list and returns the saved config and the new index.
+/// `dll` is the XInput DLL seen loaded in the running game, when known.
+fn add_exe(hwnd: HWND, exe: &Path, dll: Option<&'static str>) -> Result<(AppConfig, usize), String> {
+    let mut cfg = load()?;
     let exe_str = exe.to_string_lossy().into_owned();
     if cfg.games.iter().any(|g| g.exe.eq_ignore_ascii_case(&exe_str)) {
         return Err(format!("{exe_str} is already in the list."));
     }
-    let bytes = std::fs::read(&exe).map_err(|e| format!("Cannot read {exe_str}: {e}"))?;
+    let bytes = std::fs::read(exe).map_err(|e| format!("Cannot read {exe_str}: {e}"))?;
     let found = pe::detect(&bytes).map_err(|e| format!("Cannot add {exe_str}: {e}."))?;
     let name = exe.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| exe_str.clone());
+    let unsure = dll.is_none()
+        && match found.source {
+            DllSource::ImportTable | DllSource::DelayImport => false,
+            DllSource::StringScan => !found.others.is_empty(),
+            DllSource::Default => true,
+        };
     let game = Game {
         name,
         exe: exe_str,
         arch: found.arch.as_str().into(),
-        dll: found.dll.into(),
-        players: Default::default(),
+        dll: dll.unwrap_or(found.dll).into(),
+        players: None,
         log: false,
-    };
-    let unsure = match found.source {
-        DllSource::ImportTable | DllSource::DelayImport => false,
-        DllSource::StringScan => !found.others.is_empty(),
-        DllSource::Default => true,
     };
     let note = unsure.then(|| {
         format!(
-            "{} does not show clearly which XInput DLL it uses, so {} was chosen. If the mapping has no effect in \
-             the game, change \"dll\" for this game in {} (Open config folder) to one of {}.",
+            "{} does not show clearly which XInput DLL it uses, so {} was chosen. If the order has no effect in              the game, use Add running game while the game is open, or change \"dll\" for this game in {}              (Open config folder) to one of {}.",
             game.name,
             game.dll,
             APP_CONFIG_FILE,
@@ -267,6 +287,28 @@ pub fn add(hwnd: HWND) -> Result<(), String> {
     save(&cfg)?;
     if let Some(note) = note {
         win::info(hwnd, &note);
+    }
+    let g = cfg.games.len() - 1;
+    Ok((cfg, g))
+}
+
+/// Stores a new order for the given games, or as the default order when `games` is
+/// empty, and updates the config of every installed proxy it affects.
+pub fn set_order(cfg: &mut AppConfig, games: &[usize], rules: [Rule; SLOTS]) -> Result<(), String> {
+    if games.is_empty() {
+        cfg.default_players = rules;
+    }
+    for &g in games {
+        if let Some(game) = cfg.games.get_mut(g) {
+            game.players = Some(rules);
+        }
+    }
+    save(cfg)?;
+    let affected = |i: usize, g: &Game| if games.is_empty() { g.players.is_none() } else { games.contains(&i) };
+    for (i, game) in cfg.games.iter().enumerate() {
+        if affected(i, game) && status(game) == Status::Installed {
+            write_proxy_config(game, &cfg.default_players)?;
+        }
     }
     Ok(())
 }
@@ -286,7 +328,7 @@ mod tests {
             exe: exe.to_string_lossy().into_owned(),
             arch: "x86".into(),
             dll: "xinput1_3.dll".into(),
-            players: Default::default(),
+            players: None,
             log: false,
         };
         (dir, game)
@@ -307,7 +349,7 @@ mod tests {
         let (dir, game) = test_game("plain");
         let before = listing(&dir);
         assert!(status(&game) == Status::NotInstalled);
-        install_files(&game, &plan_install(&game).unwrap()).unwrap();
+        install_files(&game, &plan_install(&game).unwrap(), &[Rule::Auto; SLOTS]).unwrap();
         assert!(status(&game) == Status::Installed);
         assert!(dir.join(PROXY_CONFIG_FILE).exists());
         let dll = std::fs::read(dir.join("xinput1_3.dll")).unwrap();
@@ -323,7 +365,7 @@ mod tests {
         std::fs::write(dir.join("xinput1_3.dll"), b"someone else's dll").unwrap();
         let before = listing(&dir);
         assert!(status(&game) == Status::Foreign);
-        install_files(&game, &plan_install(&game).unwrap()).unwrap();
+        install_files(&game, &plan_install(&game).unwrap(), &[Rule::Auto; SLOTS]).unwrap();
         assert!(status(&game) == Status::Installed);
         assert_eq!(std::fs::read(dir.join("xinput1_3.dll.cps-backup")).unwrap(), b"someone else's dll");
         // Removing a foreign DLL is refused; removing our proxy restores the original.

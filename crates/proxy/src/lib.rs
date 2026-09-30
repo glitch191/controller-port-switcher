@@ -17,6 +17,9 @@
 
 #![cfg_attr(not(test), no_std)]
 #![allow(non_snake_case)]
+// The exports take raw pointers from the game and pass them to the real XInput
+// unchanged, with the same contract as the system DLL: they cannot be `unsafe fn`.
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 mod log;
 

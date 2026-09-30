@@ -6,6 +6,7 @@
 
 mod games;
 mod menu;
+mod procs;
 mod tray;
 mod win;
 mod xinput;
@@ -135,7 +136,7 @@ impl App {
         let text = match pressed {
             Some(s) => {
                 let slots = x.slots();
-                Some(format!("{PROJECT}\nSlot {s} responded: {}", describe(&slots[s])))
+                Some(format!("{PROJECT}\nPort {} responded: {}", s + 1, describe(&slots[s])))
             }
             None if state.ticks >= IDENTIFY_TIMEOUT_TICKS => Some(format!("{PROJECT}\nNo button pressed")),
             None => None,
@@ -150,8 +151,8 @@ impl App {
             }
             None => {
                 // Released inputs can count again on the next press.
-                for s in 0..SLOTS {
-                    state.held[s] = match (state.held[s], now[s]) {
+                for (held, now) in state.held.iter_mut().zip(now) {
+                    *held = match (*held, now) {
                         (Some(h), Some(n)) => Some(h & n),
                         _ => Some(0),
                     };
@@ -168,15 +169,14 @@ impl App {
     }
 
     fn show_menu(&self) {
-        let slots = self.slots();
         let identifying = self.tip_busy.get();
-        match menu::show(self.hwnd, &slots, identifying) {
-            0 => {}
-            menu::ID_IDENTIFY => self.start_identify(),
-            menu::ID_QUIT => unsafe {
+        match menu::show(self.hwnd, self.slots(), identifying) {
+            (0, _) => {}
+            (menu::ID_IDENTIFY, _) => self.start_identify(),
+            (menu::ID_QUIT, _) => unsafe {
                 DestroyWindow(self.hwnd);
             },
-            cmd => menu::run(self.hwnd, cmd, &slots),
+            (cmd, ctx) => menu::run(self.hwnd, cmd, &ctx),
         }
         trim_memory();
     }
