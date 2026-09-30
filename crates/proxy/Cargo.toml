@@ -1,0 +1,43 @@
+# Separate workspace for the no_std proxy: the three thin crates build it as
+# xinput1_3.dll, xinput1_4.dll and xinput9_1_0.dll.
+[workspace]
+resolver = "3"
+members = [".", "xinput1_3", "xinput1_4", "xinput9_1_0"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+cps-core = { path = "../core", default-features = false }
+xinput-proxy = { path = "." }
+windows-sys = "0.61.2"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[package]
+name = "xinput-proxy"
+description = "XInput proxy implementation shared by the xinput1_3, xinput1_4 and xinput9_1_0 DLLs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cps-core = { workspace = true }
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_IO",
+    "Win32_Storage_FileSystem",
+    "Win32_System_LibraryLoader",
+    "Win32_System_SystemInformation",
+] }

@@ -1,0 +1,5 @@
+// Icon 1 (dark glyph) suits light backgrounds and is the executable icon.
+// Icon 2 (light glyph) is used in the notification area when the taskbar is dark.
+1 ICON "icon-light.ico"
+2 ICON "icon-dark.ico"
+1 24 "app.manifest"

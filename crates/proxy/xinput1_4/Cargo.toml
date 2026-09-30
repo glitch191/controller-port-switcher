@@ -1,0 +1,16 @@
+[package]
+name = "xinput1_4"
+description = "XInput proxy built as xinput1_4.dll"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+# no_std DLL: no test harness.
+test = false
+doctest = false
+
+[dependencies]
+xinput-proxy = { workspace = true }

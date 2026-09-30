@@ -1,0 +1,10 @@
+[package]
+name = "xinput-probe"
+description = "Prints what XInput reports for slots 0-3, loading the proxy from its own folder when present"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cps-core = { workspace = true, features = ["std"] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_LibraryLoader"] }

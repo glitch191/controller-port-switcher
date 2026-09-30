@@ -1,0 +1,24 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/probe", "crates/app"]
+# The no_std proxy DLLs live in their own workspace (so the std features of cps-core
+# used by the app never reach them). The app build script builds them for x64 and x86.
+exclude = ["crates/proxy"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+cps-core = { path = "crates/core", default-features = false }
+windows-sys = "0.61.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
