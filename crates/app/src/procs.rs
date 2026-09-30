@@ -223,7 +223,8 @@ mod tests {
         assert!(!m.is_null());
         let me = unsafe { GetCurrentProcessId() };
         let mods = modules(me).expect("own modules");
-        assert_eq!(xinput_modules(&mods), vec!["xinput1_4.dll"]);
+        // Other tests running in parallel may load more XInput-named DLLs.
+        assert!(xinput_modules(&mods).contains(&"xinput1_4.dll"));
         // The process list excludes this process but finds others (at least Explorer).
         assert!(running().iter().all(|p| p.pid != me));
         assert!(!running().is_empty());
