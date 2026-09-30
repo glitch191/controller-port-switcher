@@ -10,7 +10,7 @@ use crate::win::{self, wide};
 use cps_core::appcfg::AppConfig;
 use cps_core::mapping::{NO_SLOT, Rule, SLOTS, SlotState, move_port, resolve};
 use cps_core::pe::Arch;
-use cps_core::tooltip::describe;
+use cps_core::tooltip::menu_label;
 use std::path::Path;
 use std::ptr::null_mut;
 use windows_sys::Win32::Foundation::{HWND, POINT};
@@ -54,6 +54,7 @@ struct RunningGame {
 /// What the menu showed, needed to run the chosen command.
 pub struct Context {
     slots: [SlotState; SLOTS],
+    names: [Option<String>; SLOTS],
     /// Listed games that are running; empty means the default order is edited.
     targets: Vec<usize>,
     /// Order shown in the menu (of the first running game, or the default).
@@ -137,7 +138,7 @@ fn header(cfg: &AppConfig, running: &[RunningGame]) -> String {
     format!("Running: {}", names.join(", "))
 }
 
-fn add_ports(menu: HMENU, rules: &[Rule; SLOTS], slots: &[SlotState; SLOTS]) {
+fn add_ports(menu: HMENU, rules: &[Rule; SLOTS], slots: &[SlotState; SLOTS], names: &[Option<String>; SLOTS]) {
     let map = resolve(rules, slots);
     for (port, &slot) in map.iter().enumerate() {
         let connected = slot != NO_SLOT && slots[slot as usize].connected;
@@ -151,7 +152,8 @@ fn add_ports(menu: HMENU, rules: &[Rule; SLOTS], slots: &[SlotState; SLOTS]) {
             let id = MOVE_BASE + (port * SLOTS + to) as u32;
             append(sub, Item::new(&format!("Move to port {}", to + 1), id));
         }
-        let text = format!("Port {}: {}", port + 1, describe(&slots[slot as usize]));
+        let s = slot as usize;
+        let text = format!("Port {}: {}", port + 1, menu_label(&slots[s], names[s].as_deref()));
         append(menu, Item { submenu: sub, ..Item::new(&text, 0) });
     }
 }
@@ -185,7 +187,7 @@ fn build(cfg: &Result<AppConfig, String>, ctx: &Context, running: &[RunningGame]
     match cfg {
         Ok(cfg) => {
             append(menu, Item::disabled(&header(cfg, running)));
-            add_ports(menu, &ctx.rules, &ctx.slots);
+            add_ports(menu, &ctx.rules, &ctx.slots, &ctx.names);
         }
         Err(_) => append(menu, Item::disabled("config.json is invalid: open the config folder to fix it")),
     }
@@ -218,7 +220,7 @@ fn track(hwnd: HWND, menu: HMENU) -> u32 {
 
 /// Shows the menu at the cursor and returns the chosen command (0 if none) with the
 /// context needed to run it.
-pub fn show(hwnd: HWND, slots: [SlotState; SLOTS], identifying: bool) -> (u32, Context) {
+pub fn show(hwnd: HWND, slots: [SlotState; SLOTS], names: &[Option<String>; SLOTS], identifying: bool) -> (u32, Context) {
     let cfg = games::load();
     let running = cfg.as_ref().map(running_games).unwrap_or_default();
     let targets: Vec<usize> = running.iter().map(|r| r.index).collect();
@@ -227,7 +229,7 @@ pub fn show(hwnd: HWND, slots: [SlotState; SLOTS], identifying: bool) -> (u32, C
         (Ok(c), None) => c.default_players,
         (Err(_), _) => [Rule::Auto; SLOTS],
     };
-    let ctx = Context { slots, targets, rules };
+    let ctx = Context { slots, names: names.clone(), targets, rules };
     let menu = build(&cfg, &ctx, &running, identifying);
     (track(hwnd, menu), ctx)
 }

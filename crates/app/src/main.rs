@@ -6,6 +6,7 @@
 
 mod games;
 mod menu;
+mod names;
 mod procs;
 mod tray;
 mod win;
@@ -13,7 +14,7 @@ mod xinput;
 
 use cps_core::PROJECT;
 use cps_core::mapping::{SLOTS, SlotState};
-use cps_core::tooltip::{self, describe};
+use cps_core::tooltip::{self, display_name};
 use std::cell::{Cell, OnceCell};
 use std::ptr::{null, null_mut};
 use std::time::{Duration, Instant};
@@ -61,6 +62,7 @@ struct Identify {
 struct App {
     hwnd: HWND,
     xinput: Option<xinput::XInput>,
+    names: names::Names,
     icon: Cell<HICON>,
     taskbar_created: u32,
     last_refresh: Cell<Option<Instant>>,
@@ -88,7 +90,10 @@ impl App {
 
     fn status_text(&self) -> String {
         match &self.xinput {
-            Some(x) => tooltip::status_text(PROJECT, &x.slots()),
+            Some(x) => {
+                let slots = x.slots();
+                tooltip::status_text(PROJECT, &slots, &self.names.for_slots(&slots))
+            }
             None => format!("{PROJECT}\nXInput is not available on this system"),
         }
     }
@@ -136,7 +141,8 @@ impl App {
         let text = match pressed {
             Some(s) => {
                 let slots = x.slots();
-                Some(format!("{PROJECT}\nPort {} responded: {}", s + 1, describe(&slots[s])))
+                let names = self.names.for_slots(&slots);
+                Some(format!("{PROJECT}\nPort {} responded: {}", s + 1, display_name(&slots[s], names[s].as_deref())))
             }
             None if state.ticks >= IDENTIFY_TIMEOUT_TICKS => Some(format!("{PROJECT}\nNo button pressed")),
             None => None,
@@ -170,7 +176,9 @@ impl App {
 
     fn show_menu(&self) {
         let identifying = self.tip_busy.get();
-        match menu::show(self.hwnd, self.slots(), identifying) {
+        let slots = self.slots();
+        let names = self.names.for_slots(&slots);
+        match menu::show(self.hwnd, slots, &names, identifying) {
             (0, _) => {}
             (menu::ID_IDENTIFY, _) => self.start_identify(),
             (menu::ID_QUIT, _) => unsafe {
@@ -206,7 +214,10 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             match wparam {
                 TIMER_REFRESH_SOON | TIMER_REFRESH_LATER => {
                     unsafe { KillTimer(hwnd, wparam) };
-                    with_app(|a| a.refresh());
+                    with_app(|a| {
+                        a.names.clear();
+                        a.refresh();
+                    });
                 }
                 TIMER_IDENTIFY => with_app(|a| a.identify_tick()),
                 TIMER_IDENTIFY_END => with_app(|a| a.end_identify()),
@@ -250,7 +261,10 @@ fn register_device_notifications(hwnd: HWND) {
 fn main() {
     if std::env::args().skip(1).any(|a| a == "--status") {
         let text = match xinput::XInput::load() {
-            Some(x) => tooltip::status_text(PROJECT, &x.slots()),
+            Some(x) => {
+                let slots = x.slots();
+                tooltip::status_text(PROJECT, &slots, &names::Names::default().for_slots(&slots))
+            }
             None => format!("{PROJECT}\nXInput is not available on this system"),
         };
         win::print_console(&text);
@@ -287,6 +301,7 @@ fn main() {
     let app = App {
         hwnd,
         xinput: xinput::XInput::load(),
+        names: names::Names::default(),
         icon: Cell::new(null_mut()),
         taskbar_created: unsafe { RegisterWindowMessageW(wide("TaskbarCreated").as_ptr()) },
         last_refresh: Cell::new(None),

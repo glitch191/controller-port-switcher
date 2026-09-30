@@ -29,20 +29,34 @@ pub fn describe(slot: &SlotState) -> String {
     }
 }
 
-/// One line per port, numbered 1-4 like players: "Port 1 Gamepad 045E:02FF" or
+/// Model name when known ("Real Arcade Pro.4"), otherwise "Gamepad 0F0D:008C".
+pub fn display_name(slot: &SlotState, name: Option<&str>) -> String {
+    name.map(str::to_string).unwrap_or_else(|| describe(slot))
+}
+
+/// Menu label: the name with the id to tell similar models apart,
+/// "Real Arcade Pro.4 (0F0D:008C)", or "Gamepad 0F0D:008C" without a name.
+pub fn menu_label(slot: &SlotState, name: Option<&str>) -> String {
+    match (name, slot.id) {
+        (Some(n), Some(id)) => format!("{n} ({id})"),
+        _ => display_name(slot, name),
+    }
+}
+
+/// One line per port, numbered 1-4 like players: "Port 1 Xbox Controller" or
 /// "Port 3 Empty". `index` is the XInput index (0-3).
-pub fn slot_line(index: usize, slot: &SlotState) -> String {
+pub fn slot_line(index: usize, slot: &SlotState, name: Option<&str>) -> String {
     if slot.connected {
-        format!("Port {} {}", index + 1, describe(slot))
+        format!("Port {} {}", index + 1, display_name(slot, name))
     } else {
         format!("Port {} Empty", index + 1)
     }
 }
 
 /// Full tooltip: title, then one line per physical slot, truncated to TIP_MAX.
-pub fn status_text(title: &str, slots: &[SlotState; SLOTS]) -> String {
+pub fn status_text(title: &str, slots: &[SlotState; SLOTS], names: &[Option<String>; SLOTS]) -> String {
     let mut lines = vec![title.to_string()];
-    lines.extend(slots.iter().enumerate().map(|(i, s)| slot_line(i, s)));
+    lines.extend(slots.iter().zip(names).enumerate().map(|(i, (s, n))| slot_line(i, s, n.as_deref())));
     truncate(&lines.join("\n"), TIP_MAX)
 }
 
@@ -89,12 +103,13 @@ mod tests {
     use super::*;
 
     const EMPTY: SlotState = SlotState { connected: false, subtype: 0, id: None };
+    const NO_NAMES: [Option<String>; 4] = [None, None, None, None];
 
     #[test]
     fn status_lists_all_slots() {
         let slots = [SlotState::connected(3, 0x0F0D, 0x008C), SlotState::connected(1, 0x045E, 0x02FF), EMPTY, EMPTY];
         assert_eq!(
-            status_text("controller-port-switcher", &slots),
+            status_text("controller-port-switcher", &slots, &NO_NAMES),
             "controller-port-switcher\nPort 1 Arcade stick 0F0D:008C\nPort 2 Gamepad 045E:02FF\nPort 3 Empty\nPort 4 Empty"
         );
     }
@@ -102,21 +117,37 @@ mod tests {
     #[test]
     fn unknown_id_and_subtype() {
         let s = SlotState { connected: true, subtype: 0x42, id: None };
-        assert_eq!(slot_line(0, &s), "Port 1 Unknown");
+        assert_eq!(slot_line(0, &s, None), "Port 1 Unknown");
         assert_eq!(describe(&SlotState::connected(1, 1, 2)), "Gamepad 0001:0002");
+    }
+
+    #[test]
+    fn names_replace_type_and_id() {
+        let slots = [SlotState::connected(1, 0x045E, 0x02FF), SlotState::connected(1, 0x0F0D, 0x008C), EMPTY, EMPTY];
+        let names = [Some("Xbox Controller".to_string()), Some("Real Arcade Pro.4".to_string()), None, None];
+        assert_eq!(
+            status_text("controller-port-switcher", &slots, &names),
+            "controller-port-switcher
+Port 1 Xbox Controller
+Port 2 Real Arcade Pro.4
+Port 3 Empty
+Port 4 Empty"
+        );
+        assert_eq!(menu_label(&slots[1], names[1].as_deref()), "Real Arcade Pro.4 (0F0D:008C)");
+        assert_eq!(menu_label(&slots[1], None), "Gamepad 0F0D:008C");
     }
 
     #[test]
     fn typical_status_fits_without_truncation() {
         let s = SlotState::connected(1, 0x045E, 0x02FF);
-        let text = status_text("controller-port-switcher", &[s; 4]);
+        let text = status_text("controller-port-switcher", &[s; 4], &NO_NAMES);
         assert!(!text.ends_with("..."), "{text}");
     }
 
     #[test]
     fn worst_case_status_is_truncated() {
         let s = SlotState::connected(0x07, 0xFFFF, 0xFFFF);
-        let text = status_text("controller-port-switcher", &[s; 4]);
+        let text = status_text("controller-port-switcher", &[s; 4], &NO_NAMES);
         assert!(units(&text) <= TIP_MAX, "{} units", units(&text));
     }
 
