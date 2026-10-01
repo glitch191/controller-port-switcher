@@ -40,6 +40,4 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: controller-port-switcher
-          path: |
-            target/release/controller-port-switcher.exe
-            target/release/xinput-probe.exe
+          path: target/release/controller-port-switcher.exe
