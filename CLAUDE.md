@@ -58,7 +58,7 @@ target\release\controller-port-switcher.exe --status | Out-String   # tooltip te
 target\release\xinput-probe.exe --dll xinput1_4.dll --watch 30
 ```
 
-Release: push a tag `vX.Y.Z` on `main`; release.yml attaches `controller-port-switcher.exe` and `xinput-probe.exe`. Workspace version is in `Cargo.toml`, `crates/proxy/Cargo.toml` and `assets/app.manifest` (1.0.0 at the last release).
+Release: push a tag `vX.Y.Z` on `main`; release.yml attaches `controller-port-switcher.exe` only; xinput-probe is a local test tool and is not published (owner's request; CI artifacts omit it too). Workspace version is in `Cargo.toml`, `crates/proxy/Cargo.toml` and `assets/app.manifest` (1.0.0 at the last release).
 
 Verify proxy exports after touching the proxy: compare `dumpbin /exports` of `target/proxy/<triple>/release/<dll>` with `C:\Windows\System32` (x64) and `C:\Windows\SysWOW64` (x86). All six matched names and ordinals at v1.0.0. On the original machine dumpbin was at `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\dumpbin.exe`.
 

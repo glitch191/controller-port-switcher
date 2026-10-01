@@ -36,9 +36,8 @@ Nothing uncommitted. The working tree on `main` is clean.
 
 1. **Tooltip line for the running game** (agreed with the owner, not started): when a listed game runs, add a line such as "In xinput-probe: 1 Real Arcade Pro.4, 2 Xbox Controller", because the tooltip shows the Windows order while the game sees another. Likely files: `crates/app/src/main.rs` (status_text, refresh on hover), `crates/app/src/menu.rs` (running_games/context would need to be shared), `crates/core/src/tooltip.rs` (text, truncation, tests). Open points: cost of a process scan on hover (not measured; hover refresh is throttled to 500 ms), wording with several running games, 127-character limit. Work on a branch, PR, then release 1.1.0.
 2. **Release notes for v1.0.0**: the auto-generated notes only mention PR #1. Offered to write a feature summary; no answer yet.
-3. **.gitattributes** (for example `* text=auto eol=lf`) to stop LF/CRLF warnings: offered, no answer yet.
-4. **Test with a real game**: ask the owner for a game path and confirmation before touching its folder.
-5. Local cleanup: delete the merged local branch `fix/message-line-breaks` and prune the stale remote-tracking ref (`git fetch --prune`); remove `target\game-test` when no longer needed.
+3. **Test with a real game**: ask the owner for a game path and confirmation before touching its folder.
+4. Local cleanup: delete the merged local branch `fix/message-line-breaks` and prune the stale remote-tracking ref (`git fetch --prune`); remove `target\game-test` when no longer needed.
 
 ## Pitfalls met (and fixed)
 
@@ -56,7 +55,8 @@ Nothing uncommitted. The working tree on `main` is clean.
 ## Open questions
 
 - License holder: "glitch191" was used; offered to change it to the owner's real name or another license. No answer.
-- The v1.0.0 release notes and .gitattributes (see Next steps 2 and 3).
+- The v1.0.0 release notes (see Next step 2).
+- The v1.0.0 release still has `xinput-probe.exe` attached; later releases and CI artifacts omit it (owner's request). Removing it from v1.0.0 needs the owner's go-ahead.
 - Tooltip line design details (see Next step 1).
 
 ## Local machine state (original machine, may not apply elsewhere)

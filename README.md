@@ -70,9 +70,9 @@ Quit
 ## Download
 
 Each [release](../../releases) has `controller-port-switcher.exe` (the app, with the
-proxy DLLs inside) and `xinput-probe.exe` (optional test tool). The executables are
-not code-signed, so Windows SmartScreen may warn on first launch ("More info",
-then "Run anyway"). You can also build them yourself.
+proxy DLLs inside). The executable is not code-signed, so Windows SmartScreen may
+warn on first launch ("More info", then "Run anyway"). You can also build it
+yourself.
 
 ## Build
 
@@ -88,8 +88,8 @@ cargo build --release
 ```
 
 This produces `target\release\controller-port-switcher.exe`, which embeds the six
-proxy DLLs (three names, x64 and x86), and `target\release\xinput-probe.exe`. The
-DLLs themselves are built by the app's build script into `target\proxy\`.
+proxy DLLs (three names, x64 and x86), and `target\release\xinput-probe.exe` (a test
+tool, not included in releases). The DLLs themselves are built by the app's build script into `target\proxy\`.
 
 Run the tests:
 
